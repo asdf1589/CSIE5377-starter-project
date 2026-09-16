@@ -151,3 +151,58 @@ async def test_follow_links_checks_link_domain_not_referrer_domain(tmp_path):
             await hub_server.close()
     finally:
         await leaf_server.close()
+
+
+async def test_follow_links_does_not_deadlock_when_all_workers_saturate_a_small_queue(tmp_path):
+    """Regression test for a real deadlock hit on a live 48h-style run:
+    if link-following used a blocking enqueue, N workers that each pick
+    up a link-heavy page AT THE SAME TIME can all end up blocked trying
+    to enqueue into an already-full bounded queue, with none left to
+    call frontier.get() and drain it. Reproduce it directly: seed exactly
+    as many "hub" pages (each with many outbound links) as there are
+    workers, with a queue too small to hold everyone's discovered links,
+    and confirm the crawl still completes instead of hanging forever.
+    """
+    concurrency = 4
+    links_per_hub = 20
+
+    async def leaf(request):
+        return web.Response(text="<html></html>", content_type="text/html")
+
+    app = web.Application()
+    for h in range(concurrency):
+        links = "".join(f'<a href="/leaf{h}_{i}">l</a>' for i in range(links_per_hub))
+
+        async def hub(request, links=links):
+            return web.Response(text=f"<html>{links}</html>", content_type="text/html")
+
+        app.router.add_get(f"/hub{h}", hub)
+        for i in range(links_per_hub):
+            app.router.add_get(f"/leaf{h}_{i}", leaf)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        config = CrawlerConfig(
+            request_timeout=5.0, max_retries=0, per_domain_delay=0.0,
+            max_concurrency=concurrency,
+            follow_links=True, max_pages_per_domain=1000,
+        )
+        frontier = Frontier(maxsize=5)  # deliberately smaller than concurrency * links_per_hub
+        for h in range(concurrency):
+            await frontier.add(str(server.make_url(f"/hub{h}")))
+
+        rate_limiter = DomainRateLimiter(config.per_domain_concurrency, config.per_domain_delay)
+        store = ResultStore(str(tmp_path))
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                asyncio.create_task(worker(i, frontier, session, rate_limiter, None, store, config))
+                for i in range(concurrency)
+            ]
+            try:
+                await asyncio.wait_for(frontier.join(), timeout=10)
+            finally:
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        await server.close()

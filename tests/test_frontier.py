@@ -68,6 +68,59 @@ async def test_snapshot_and_restore_round_trip():
     assert await restored.add("https://a.example/1") is False
 
 
+async def test_try_add_behaves_like_add_when_queue_has_room():
+    f = Frontier(maxsize=10)
+    added = await f.try_add("https://a.example/1")
+    assert added is True
+    assert f.qsize() == 1
+    assert f.domain_page_count("a.example") == 1
+    assert f.seen_count == 1
+
+
+async def test_try_add_returns_false_and_rolls_back_when_queue_full():
+    metrics.LINKS_DROPPED_QUEUE_FULL_TOTAL._value.set(0)
+    f = Frontier(maxsize=1)
+    await f.add("https://a.example/1")  # fills the queue (maxsize=1)
+
+    added = await f.try_add("https://b.example/1")
+
+    assert added is False
+    assert f.qsize() == 1  # unchanged: the new URL was never enqueued
+    assert f.seen_count == 1  # unchanged: b.example/1 must NOT be marked seen ...
+    assert f.domain_page_count("b.example") == 0  # ... or counted against its domain,
+    assert metrics.LINKS_DROPPED_QUEUE_FULL_TOTAL._value.get() == 1
+    # ... so it can be discovered again later, once there's room:
+    await f.get()
+    assert await f.try_add("https://b.example/1") is True
+
+
+async def test_try_add_on_already_seen_url_returns_false_without_touching_queue():
+    f = Frontier(maxsize=10)
+    await f.add("https://a.example/1")
+    added_again = await f.try_add("https://a.example/1")
+    assert added_again is False
+    assert f.qsize() == 1  # not double-enqueued
+
+
+async def test_try_add_never_blocks_even_when_queue_stays_full():
+    """The whole point of try_add: N concurrent callers against a
+    permanently-full queue must all return promptly, never hang -- this
+    is what worker.py's link-following relies on to avoid the deadlock
+    where every worker is stuck enqueueing and none are left to drain
+    the queue via get().
+    """
+    f = Frontier(maxsize=1)
+    await f.add("https://a.example/1")  # fills the queue and stays full
+
+    async def attempt(i):
+        return await f.try_add(f"https://c.example/{i}")
+
+    results = await asyncio.wait_for(
+        asyncio.gather(*(attempt(i) for i in range(20))), timeout=2
+    )
+    assert results == [False] * 20  # every single one dropped, none blocked
+
+
 async def test_snapshot_includes_url_blocked_on_full_queue():
     f = Frontier(maxsize=1)
     await f.add("https://a.example/1")  # fills the queue (maxsize=1)

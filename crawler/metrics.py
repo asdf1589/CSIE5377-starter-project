@@ -38,6 +38,11 @@ DISTINCT_DOMAINS_TOTAL = Gauge(
     "crawler_distinct_domains_total",
     "Distinct domains ever added to the frontier (seeds + followed links)",
 )
+LINKS_DROPPED_QUEUE_FULL_TOTAL = Counter(
+    "crawler_links_dropped_queue_full_total",
+    "Discovered links dropped because the bounded frontier queue was full "
+    "(link-following uses a non-blocking enqueue to avoid deadlocking workers)",
+)
 
 
 def status_bucket(status: int) -> str:

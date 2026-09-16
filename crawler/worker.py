@@ -98,4 +98,9 @@ async def _follow_links(source_url: str, result, frontier, config) -> None:
         link_domain = domain_of(norm_link)
         if frontier.domain_page_count(link_domain) >= config.max_pages_per_domain:
             continue
-        await frontier.add(link, referrer=source_url)
+        # try_add(), not add(): this coroutine is itself one of the finite
+        # worker pool that would need to drain the queue via frontier.get().
+        # A blocking add() here can deadlock the whole crawl if every worker
+        # simultaneously blocks enqueueing links into a full queue, leaving
+        # none free to dequeue -- see Frontier.try_add()'s docstring.
+        await frontier.try_add(link, referrer=source_url)

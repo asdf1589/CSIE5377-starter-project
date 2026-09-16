@@ -82,6 +82,47 @@ class Frontier:
         self._pending_put.discard(norm)
         return True
 
+    async def try_add(self, url: str, referrer: str | None = None) -> bool:
+        """Like `add()`, but never blocks on the bounded queue's
+        backpressure: if the queue is full, the URL is dropped (no
+        bookkeeping is committed -- it's exactly as if this call never
+        happened, so it can be discovered again later) and this returns
+        False, instead of awaiting `put()` until room frees up.
+
+        This exists ONLY for link-following (worker.py's
+        `_follow_links`), where the caller is itself one of the finite
+        pool of coroutines that would otherwise need to drain the queue
+        via `get()`. If every worker simultaneously blocks here waiting
+        for queue room, none are left to call `get()` and make room --
+        a real deadlock that a live 48h run hit in practice. Seed
+        loading (`add_many`) keeps using the blocking `add()`: at
+        startup, blocking until there's room is exactly what you want,
+        and no worker-drains-the-queue-it's-blocked-on cycle exists yet.
+
+        Uses `put_nowait()` under `self._lock` (safe: it's synchronous,
+        no `await` inside the lock) so the whole check-and-commit is one
+        atomic step -- unlike `add()`, this never needs `_pending_put`
+        tracking, since there's no window where the URL is committed to
+        `_seen` without also already being in the queue.
+        """
+        norm = normalize_url(url)
+        async with self._lock:
+            if norm in self._seen:
+                return False
+            domain = domain_of(norm)
+            try:
+                self._queue.put_nowait(norm)
+            except asyncio.QueueFull:
+                metrics.LINKS_DROPPED_QUEUE_FULL_TOTAL.inc()
+                return False
+            self._seen.add(norm)
+            self._referrers[norm] = referrer
+            is_new_domain = domain not in self._domain_page_counts
+            self._domain_page_counts[domain] = self._domain_page_counts.get(domain, 0) + 1
+        if is_new_domain:
+            metrics.DISTINCT_DOMAINS_TOTAL.set(len(self._domain_page_counts))
+        return True
+
     async def add_many(self, urls) -> int:
         added = 0
         for u in urls:
