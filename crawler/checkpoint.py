@@ -35,10 +35,22 @@ def load_checkpoint(path: str) -> dict:
 
 
 async def checkpoint_loop(path: str, interval: float, frontier) -> None:
+    """Write a checkpoint every `interval` seconds until cancelled.
+
+    A write failure (disk full, bad permissions, a --checkpoint-path
+    pointing at a directory that doesn't exist) is logged and the loop
+    keeps running -- it must NOT propagate, or the coroutine dies
+    silently (main.py's shutdown `asyncio.gather(..., return_exceptions=True)`
+    swallows it with no log line), leaving a 48h unattended run with no
+    further checkpoints and no visibility into why.
+    """
     try:
         while True:
             await asyncio.sleep(interval)
-            write_checkpoint(path, frontier)
-            logger.info(f"checkpoint_written path={path}")
+            try:
+                write_checkpoint(path, frontier)
+                logger.info(f"checkpoint_written path={path}")
+            except Exception as e:
+                logger.error(f"checkpoint_failed path={path} err={e}")
     except asyncio.CancelledError:
         pass

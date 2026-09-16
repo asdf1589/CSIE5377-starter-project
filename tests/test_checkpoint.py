@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from crawler import stats
@@ -47,3 +48,15 @@ async def test_checkpoint_loop_writes_periodically(tmp_path):
     assert os.path.exists(ckpt_path)
     loaded = load_checkpoint(ckpt_path)
     assert loaded["frontier"]["seen"] == ["https://a.example/1"]
+
+
+async def test_checkpoint_loop_survives_write_failure_and_keeps_running(tmp_path, caplog):
+    caplog.set_level(logging.ERROR, logger="crawler.checkpoint")
+    bad_path = str(tmp_path / "nonexistent_dir" / "checkpoint.json")
+    f = Frontier(maxsize=10)
+    task = asyncio.create_task(checkpoint_loop(bad_path, 0.05, f))
+    await asyncio.sleep(0.12)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)  # must not raise
+    assert not os.path.exists(bad_path)
+    assert "checkpoint_failed" in caplog.text
