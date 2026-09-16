@@ -60,11 +60,18 @@ async def worker(
                     robots_blocked=False, referrer=referrer,
                     include_referrer=config.follow_links,
                 )
-                if config.follow_links and result.ok and result.content_type == "text/html":
-                    await _follow_links(url, result, frontier, config)
             finally:
                 metrics.INFLIGHT.dec()
                 rate_limiter.release(domain)
+            # Enqueueing links can block on the frontier's bounded-queue
+            # backpressure (frontier.add() -> await queue.put()). That must
+            # happen AFTER the per-domain rate-limit slot is released above,
+            # or a worker blocked here would hold domain `domain`'s slot
+            # indefinitely, starving every other worker wanting to fetch
+            # from that domain -- and INFLIGHT would misreport HTML
+            # parsing/link enqueueing as network concurrency.
+            if config.follow_links and result.ok and result.content_type == "text/html":
+                await _follow_links(url, result, frontier, config)
         finally:
             metrics.QUEUE_DEPTH.set(frontier.qsize())
             frontier.task_done()
