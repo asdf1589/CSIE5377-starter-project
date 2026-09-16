@@ -31,5 +31,18 @@ class Stats:
             "bytes_received": self.bytes_received,
         }
 
+    def load_dict(self, d: dict) -> None:
+        """Restore counters from a checkpoint (crawler-spec.md #2). Uses
+        .get(..., 0) per field so a checkpoint written by an older
+        schema doesn't crash a resume -- it just resumes that counter
+        at 0.
+        """
+        self.fetched = d.get("fetched", 0)
+        self.ok = d.get("ok", 0)
+        self.failed = d.get("failed", 0)
+        self.retried = d.get("retried", 0)
+        self.robots_skipped = d.get("robots_skipped", 0)
+        self.bytes_received = d.get("bytes_received", 0)
+
 
 STATS = Stats()
