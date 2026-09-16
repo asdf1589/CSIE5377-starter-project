@@ -1,3 +1,5 @@
+import asyncio
+
 from crawler import metrics
 from crawler.frontier import Frontier, domain_of
 
@@ -64,3 +66,15 @@ async def test_snapshot_and_restore_round_trip():
     assert restored.domain_page_count("a.example") == 2
     # a URL already fetched before the crash must not be re-enqueued
     assert await restored.add("https://a.example/1") is False
+
+
+async def test_snapshot_includes_url_blocked_on_full_queue():
+    f = Frontier(maxsize=1)
+    await f.add("https://a.example/1")  # fills the queue (maxsize=1)
+    blocked_add = asyncio.create_task(f.add("https://a.example/2"))
+    await asyncio.sleep(0.05)  # let the task actually reach the blocking put()
+    assert not blocked_add.done()  # confirm it's genuinely blocked, not raced past
+    snapshot = f.snapshot_state()
+    assert "https://a.example/2" in snapshot["pending"]
+    await f.get()  # drain one slot so the blocked add() can complete
+    await blocked_add

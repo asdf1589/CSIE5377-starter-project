@@ -56,6 +56,7 @@ class Frontier:
         self._lock = asyncio.Lock()
         self._domain_page_counts: dict[str, int] = {}
         self._referrers: dict[str, str | None] = {}
+        self._pending_put: set[str] = set()
 
     async def add(self, url: str, referrer: str | None = None) -> bool:
         """Returns True if the (normalized) URL was newly added."""
@@ -68,9 +69,17 @@ class Frontier:
             domain = domain_of(norm)
             is_new_domain = domain not in self._domain_page_counts
             self._domain_page_counts[domain] = self._domain_page_counts.get(domain, 0) + 1
+            self._pending_put.add(norm)
         if is_new_domain:
             metrics.DISTINCT_DOMAINS_TOTAL.set(len(self._domain_page_counts))
         await self._queue.put(norm)  # may block: that's the backpressure
+        # No `await` between here and the line above resolving, so no other
+        # coroutine (including a synchronous snapshot_state() call) can run
+        # in between -- by the time put() returns, `norm` is already visible
+        # in `self._queue._queue`, so removing it from `_pending_put` here
+        # (without the lock) can never cause a snapshot to see `norm` in
+        # neither or both of the two collections.
+        self._pending_put.discard(norm)
         return True
 
     async def add_many(self, urls) -> int:
@@ -113,8 +122,20 @@ class Frontier:
         worker (`pending`), and per-domain counts for the crawl-trap
         cap (#3).
 
-        `pending` is only what's still sitting in the queue -- a URL a
-        worker already popped via `get()` but hasn't finished
+        `pending` is the queue's current contents PLUS `_pending_put`:
+        URLs that `add()` has already committed to `_seen` (under the
+        lock) but that haven't finished their `await self._queue.put()`
+        yet -- e.g. because the bounded queue is full and `put()` is
+        blocked on backpressure. Without `_pending_put`, a URL caught in
+        that window would be in `_seen` but in neither the queue nor
+        this snapshot, so `from_snapshot()` would never re-add it (its
+        `add()` check on `_seen` would reject it) and never re-enqueue
+        it either -- permanently losing the URL. The two collections
+        never simultaneously contain the same URL at a point this
+        (synchronous, non-`await`ing) method could observe them (see
+        `add()`'s comment), so concatenating them needs no dedup.
+
+        A URL a worker already popped via `get()` but hasn't finished
         processing yet is NOT included, so it's lost on a `kill -9`.
         That's an accepted gap: the spec's checkpoint state list is
         exactly {seen, pending queue contents, stats, domain counts},
@@ -128,7 +149,7 @@ class Frontier:
         """
         return {
             "seen": list(self._seen),
-            "pending": list(self._queue._queue),  # asyncio.Queue's internal deque
+            "pending": list(self._queue._queue) + list(self._pending_put),
             "domain_page_counts": dict(self._domain_page_counts),
         }
 
