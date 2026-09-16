@@ -94,7 +94,7 @@ async def run(config: CrawlerConfig) -> None:
         write_summary(config.output_dir, elapsed, frontier.seen_count)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Educational single-node concurrent crawler")
     p.add_argument("--seeds", default="seeds.txt", help="path to newline-delimited seed URL file")
     p.add_argument("--output-dir", default="output")
@@ -107,7 +107,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--status-interval", type=float, default=5.0)
     p.add_argument("--save-body", action="store_true", help="persist raw response bodies under output/pages/")
     p.add_argument("--no-robots", action="store_true", help="disable robots.txt checking (not recommended)")
-    return p.parse_args()
+    p.add_argument("--max-runtime-hours", type=float, default=None, help="wall-clock auto-stop (e.g. 48)")
+    p.add_argument("--checkpoint-interval", type=float, default=300, help="seconds between checkpoint writes")
+    p.add_argument("--checkpoint-path", default="output/checkpoint.json")
+    p.add_argument("--resume", default=None, help="resume from a checkpoint file instead of loading --seeds")
+    p.add_argument("--follow-links", action="store_true", help="enable link extraction / frontier growth")
+    p.add_argument(
+        "--max-pages-per-domain", type=int, default=20,
+        help="crawl-trap cap; only matters with --follow-links",
+    )
+    return p.parse_args(argv)
 
 
 def main() -> None:
@@ -124,6 +133,12 @@ def main() -> None:
         status_interval=args.status_interval,
         save_body=args.save_body,
         respect_robots_txt=not args.no_robots,
+        max_runtime_hours=args.max_runtime_hours,
+        checkpoint_interval_seconds=args.checkpoint_interval,
+        checkpoint_path=args.checkpoint_path,
+        resume_from=args.resume,
+        follow_links=args.follow_links,
+        max_pages_per_domain=args.max_pages_per_domain,
     )
     try:
         asyncio.run(run(config))

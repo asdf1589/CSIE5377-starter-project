@@ -37,3 +37,15 @@ class CrawlerConfig:
 
     # --- storage ---
     save_body: bool = False            # if True, persist raw response bodies to disk
+
+    # --- reliability: wall-clock bound for unattended runs (spec #1) ---
+    max_runtime_hours: float | None = None
+
+    # --- checkpoint / resume (spec #2) ---
+    checkpoint_interval_seconds: float = 300
+    checkpoint_path: str = "output/checkpoint.json"
+    resume_from: str | None = None
+
+    # --- link following / frontier growth (spec #3) ---
+    follow_links: bool = False
+    max_pages_per_domain: int = 20
