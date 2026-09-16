@@ -1764,7 +1764,7 @@ async def run(config: CrawlerConfig) -> None:
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest -q tests/test_main_integration.py`
-Expected: `4 passed`
+Expected: `3 passed`
 
 If `test_kill_and_resume_does_not_refetch_completed_urls` is flaky on a slower machine (timing-sensitive `asyncio.sleep(1.0)` before the kill), increase that sleep slightly rather than removing the test — the assertion `0 < first_pass_count < 6` is intentionally loose to absorb normal timing variance.
 
