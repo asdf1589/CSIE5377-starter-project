@@ -51,6 +51,10 @@ async def test_run_end_to_end_writes_results_and_summary(tmp_path):
         assert len(records) == 1
         assert records[0]["ok"] is True
         assert records[0]["domain"]
+        # a final checkpoint should be written on shutdown regardless of the
+        # periodic interval (set to 1000s above so it can't fire during this
+        # short test) -- a clean exit must not discard progress
+        assert os.path.exists(os.path.join(output_dir, "checkpoint.json"))
     finally:
         await server.close()
 

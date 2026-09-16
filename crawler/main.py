@@ -21,7 +21,7 @@ from .config import CrawlerConfig
 from .logging_config import setup_logging
 from . import metrics
 from . import stats
-from .checkpoint import checkpoint_loop, load_checkpoint
+from .checkpoint import checkpoint_loop, load_checkpoint, write_checkpoint
 from .frontier import Frontier
 from .ratelimiter import DomainRateLimiter
 from .robots import RobotsCache
@@ -123,6 +123,7 @@ async def run(config: CrawlerConfig) -> None:
 
         elapsed = time.monotonic() - start
         logger.info(f"crawl_complete elapsed_s={elapsed:.1f} urls_seen={frontier.seen_count}")
+        write_checkpoint(config.checkpoint_path, frontier)
         write_summary(config.output_dir, elapsed, frontier.seen_count)
 
 
