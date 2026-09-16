@@ -9,6 +9,7 @@ def test_new_flags_default_to_spec_values():
     assert args.resume is None
     assert args.follow_links is False
     assert args.max_pages_per_domain == 20
+    assert args.queue_maxsize == 2000
 
 
 def test_new_flags_parse_when_provided():
@@ -19,6 +20,7 @@ def test_new_flags_parse_when_provided():
         "--resume", "ckpt.json",
         "--follow-links",
         "--max-pages-per-domain", "5",
+        "--queue-maxsize", "20000",
     ])
     assert args.max_runtime_hours == 48.0
     assert args.checkpoint_interval == 10.0
@@ -26,3 +28,4 @@ def test_new_flags_parse_when_provided():
     assert args.resume == "ckpt.json"
     assert args.follow_links is True
     assert args.max_pages_per_domain == 5
+    assert args.queue_maxsize == 20000

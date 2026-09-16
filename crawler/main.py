@@ -152,6 +152,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-pages-per-domain", type=int, default=20,
         help="crawl-trap cap; only matters with --follow-links",
     )
+    p.add_argument(
+        "--queue-maxsize", type=int, default=2000,
+        help="bounded frontier queue size; with --follow-links, links discovered "
+             "while the queue is full are dropped (never blocked) -- raise this "
+             "if crawler_links_dropped_queue_full_total in /metrics is climbing fast",
+    )
     return p.parse_args(argv)
 
 
@@ -175,6 +181,7 @@ def main() -> None:
         resume_from=args.resume,
         follow_links=args.follow_links,
         max_pages_per_domain=args.max_pages_per_domain,
+        queue_maxsize=args.queue_maxsize,
     )
     try:
         asyncio.run(run(config))
