@@ -28,6 +28,7 @@ class FetchResult:
     error: str | None = None
     elapsed: float = 0.0
     attempts: int = 0
+    content_type: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -73,7 +74,10 @@ async def fetch(
                         "attempt": attempt,
                     },
                 )
-                return FetchResult(url, status=resp.status, body=body, elapsed=elapsed, attempts=attempt)
+                return FetchResult(
+                    url, status=resp.status, body=body, elapsed=elapsed,
+                    attempts=attempt, content_type=resp.content_type,
+                )
 
         except asyncio.CancelledError:
             raise  # never swallow cancellation (e.g. Ctrl-C shutdown)
