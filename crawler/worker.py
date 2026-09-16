@@ -11,6 +11,8 @@ import logging
 
 from . import metrics, stats
 from .fetcher import fetch
+from .frontier import domain_of, normalize_url
+from .linkextract import extract_links
 from .robots import RobotsCache
 
 logger = logging.getLogger("crawler.worker")
@@ -27,6 +29,8 @@ async def worker(
 ) -> None:
     while True:
         url = await frontier.get()
+        domain = domain_of(url)
+        referrer = frontier.referrer_of(url)
         try:
             if robots is not None:
                 allowed = await robots.is_allowed(url)
@@ -34,9 +38,14 @@ async def worker(
                     metrics.ROBOTS_SKIPPED_TOTAL.inc()
                     stats.STATS.robots_skipped += 1
                     logger.info("robots_disallowed", extra={"url": url, "worker_id": worker_id})
+                    await store.record(
+                        url, domain, None,
+                        robots_blocked=True, referrer=referrer,
+                        include_referrer=config.follow_links,
+                    )
                     continue
 
-            domain = await rate_limiter.acquire(url)
+            await rate_limiter.acquire(url)
             metrics.INFLIGHT.inc()
             try:
                 result = await fetch(
@@ -46,10 +55,40 @@ async def worker(
                     max_retries=config.max_retries,
                     backoff_base=config.retry_backoff_base,
                 )
-                await store.record(result)
+                await store.record(
+                    url, domain, result,
+                    robots_blocked=False, referrer=referrer,
+                    include_referrer=config.follow_links,
+                )
+                if config.follow_links and result.ok and result.content_type == "text/html":
+                    await _follow_links(url, result, frontier, config)
             finally:
                 metrics.INFLIGHT.dec()
                 rate_limiter.release(domain)
         finally:
             metrics.QUEUE_DEPTH.set(frontier.qsize())
             frontier.task_done()
+
+
+async def _follow_links(source_url: str, result, frontier, config) -> None:
+    """Extract <a href> from a fetched HTML page and enqueue new ones,
+    subject to the per-domain crawl-trap cap (crawler-spec.md #3).
+
+    The cap is checked against each candidate LINK's own domain (not
+    the referring page's domain): the trap this defends against is one
+    domain generating unbounded same-domain links (e.g. an infinite
+    calendar), so the budget that must be capped is "how many pages of
+    THIS domain are already known to the frontier". Checking the
+    referrer's domain instead would block legitimate cross-domain
+    discovery from a single popular hub page -- the opposite of
+    crawler-spec.md's breadth-first, many-distinct-domains bias.
+    """
+    if not result.body:
+        return
+    html_text = result.body.decode("utf-8", errors="ignore")
+    for link in extract_links(source_url, html_text):
+        norm_link = normalize_url(link)
+        link_domain = domain_of(norm_link)
+        if frontier.domain_page_count(link_domain) >= config.max_pages_per_domain:
+            continue
+        await frontier.add(link, referrer=source_url)
