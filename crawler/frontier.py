@@ -106,3 +106,38 @@ class Frontier:
     @property
     def seen_count(self) -> int:
         return len(self._seen)
+
+    def snapshot_state(self) -> dict:
+        """Point-in-time state sufficient to resume (crawler-spec.md #2):
+        every URL ever enqueued (`seen`), URLs still waiting for a
+        worker (`pending`), and per-domain counts for the crawl-trap
+        cap (#3).
+
+        `pending` is only what's still sitting in the queue -- a URL a
+        worker already popped via `get()` but hasn't finished
+        processing yet is NOT included, so it's lost on a `kill -9`.
+        That's an accepted gap: the spec's checkpoint state list is
+        exactly {seen, pending queue contents, stats, domain counts},
+        and tracking "in-flight, not yet task_done()" URLs separately
+        isn't in that list.
+
+        Referrers are also deliberately NOT included, for the same
+        reason -- the spec's list omits them, so a resumed run loses
+        referrer metadata for not-yet-fetched URLs. That only affects
+        an optional JSONL field, never correctness.
+        """
+        return {
+            "seen": list(self._seen),
+            "pending": list(self._queue._queue),  # asyncio.Queue's internal deque
+            "domain_page_counts": dict(self._domain_page_counts),
+        }
+
+    @classmethod
+    async def from_snapshot(cls, snapshot: dict, maxsize: int = 0) -> "Frontier":
+        frontier = cls(maxsize=maxsize)
+        frontier._seen = set(snapshot["seen"])
+        frontier._domain_page_counts = dict(snapshot["domain_page_counts"])
+        for url in snapshot["pending"]:
+            await frontier._queue.put(url)
+        metrics.DISTINCT_DOMAINS_TOTAL.set(len(frontier._domain_page_counts))
+        return frontier

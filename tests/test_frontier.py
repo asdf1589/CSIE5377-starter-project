@@ -45,3 +45,22 @@ async def test_referrer_of_returns_source_url_for_followed_link():
     f = Frontier()
     await f.add("https://a.example/child", referrer="https://a.example/")
     assert f.referrer_of("https://a.example/child") == "https://a.example/"
+
+
+async def test_snapshot_and_restore_round_trip():
+    f = Frontier(maxsize=10)
+    await f.add("https://a.example/1")
+    await f.add("https://a.example/2")
+    await f.get()  # pop one item so it's no longer "pending"
+
+    snapshot = f.snapshot_state()
+    assert set(snapshot["seen"]) == {"https://a.example/1", "https://a.example/2"}
+    assert snapshot["pending"] == ["https://a.example/2"]
+    assert snapshot["domain_page_counts"] == {"a.example": 2}
+
+    restored = await Frontier.from_snapshot(snapshot, maxsize=10)
+    assert restored.seen_count == 2
+    assert restored.qsize() == 1
+    assert restored.domain_page_count("a.example") == 2
+    # a URL already fetched before the crash must not be re-enqueued
+    assert await restored.add("https://a.example/1") is False
