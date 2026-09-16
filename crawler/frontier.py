@@ -55,14 +55,16 @@ class Frontier:
         self._seen: set[str] = set()
         self._lock = asyncio.Lock()
         self._domain_page_counts: dict[str, int] = {}
+        self._referrers: dict[str, str | None] = {}
 
-    async def add(self, url: str) -> bool:
+    async def add(self, url: str, referrer: str | None = None) -> bool:
         """Returns True if the (normalized) URL was newly added."""
         norm = normalize_url(url)
         async with self._lock:
             if norm in self._seen:
                 return False
             self._seen.add(norm)
+            self._referrers[norm] = referrer
             domain = domain_of(norm)
             is_new_domain = domain not in self._domain_page_counts
             self._domain_page_counts[domain] = self._domain_page_counts.get(domain, 0) + 1
@@ -80,6 +82,13 @@ class Frontier:
 
     def domain_page_count(self, domain: str) -> int:
         return self._domain_page_counts.get(domain, 0)
+
+    def referrer_of(self, url: str) -> str | None:
+        """`url` must already be normalized (i.e. exactly what `get()`
+        returned) -- this only looks up entries written by `add()`,
+        which stores under the normalized form.
+        """
+        return self._referrers.get(url)
 
     async def get(self) -> str:
         return await self._queue.get()

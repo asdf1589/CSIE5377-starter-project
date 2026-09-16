@@ -33,3 +33,15 @@ async def test_duplicate_url_does_not_double_count_domain():
     added_again = await f.add("https://a.example/1")
     assert added_again is False
     assert f.domain_page_count("a.example") == 1
+
+
+async def test_referrer_of_is_none_for_seed():
+    f = Frontier()
+    await f.add("https://a.example/")
+    assert f.referrer_of("https://a.example/") is None
+
+
+async def test_referrer_of_returns_source_url_for_followed_link():
+    f = Frontier()
+    await f.add("https://a.example/child", referrer="https://a.example/")
+    assert f.referrer_of("https://a.example/child") == "https://a.example/"
