@@ -1,0 +1,16 @@
+# One URL per line. Lines starting with # are ignored.
+# This is a small diverse sample for a first test run -- replace with
+# your real 1000-URL list before a full run (see README "Getting your
+# 1000 seed URLs").
+https://www.python.org/
+https://docs.python.org/3/
+https://peps.python.org/
+https://www.rust-lang.org/
+https://go.dev/
+https://news.ycombinator.com/
+https://www.iana.org/
+https://www.w3.org/
+https://developer.mozilla.org/
+https://en.wikipedia.org/wiki/Web_crawler
+https://httpbin.org/get
+https://example.com/

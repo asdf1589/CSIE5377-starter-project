@@ -1,0 +1,10 @@
+# Minimal scrape config. Run: prometheus --config.file=monitoring/prometheus.yml
+# then open http://localhost:9090 (Prometheus's own UI) and query e.g.
+# rate(crawler_requests_total[1m]) or crawler_queue_depth.
+global:
+  scrape_interval: 2s
+
+scrape_configs:
+  - job_name: "edu_crawler"
+    static_configs:
+      - targets: ["host.docker.internal:9090"]  # or "localhost:9090" if running Prometheus natively
