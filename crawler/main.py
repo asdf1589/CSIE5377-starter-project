@@ -123,7 +123,10 @@ async def run(config: CrawlerConfig) -> None:
 
         elapsed = time.monotonic() - start
         logger.info(f"crawl_complete elapsed_s={elapsed:.1f} urls_seen={frontier.seen_count}")
-        write_checkpoint(config.checkpoint_path, frontier)
+        try:
+            write_checkpoint(config.checkpoint_path, frontier)
+        except Exception as e:
+            logger.error(f"checkpoint_failed path={config.checkpoint_path} err={e}")
         write_summary(config.output_dir, elapsed, frontier.seen_count)
 
 

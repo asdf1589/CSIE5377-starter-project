@@ -59,6 +59,36 @@ async def test_run_end_to_end_writes_results_and_summary(tmp_path):
         await server.close()
 
 
+async def test_run_writes_summary_even_if_final_checkpoint_write_fails(tmp_path):
+    async def page(request):
+        return web.Response(text="<html></html>", content_type="text/html")
+
+    app = web.Application()
+    app.router.add_get("/page", page)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        seeds_path = str(tmp_path / "seeds.txt")
+        with open(seeds_path, "w", encoding="utf-8") as f:
+            f.write(str(server.make_url("/page")) + "\n")
+
+        output_dir = str(tmp_path / "output")
+        config = CrawlerConfig(
+            seeds_file=seeds_path,
+            output_dir=output_dir,
+            max_concurrency=2,
+            metrics_port=0,
+            checkpoint_interval_seconds=1000,  # periodic loop won't fire during this short test
+            checkpoint_path=str(tmp_path / "nonexistent_dir" / "checkpoint.json"),  # final write will fail
+            respect_robots_txt=False,
+        )
+        await run(config)  # must not raise
+
+        assert os.path.exists(os.path.join(output_dir, "summary.json"))
+    finally:
+        await server.close()
+
+
 async def test_kill_and_resume_does_not_refetch_completed_urls(tmp_path):
     fetched_paths = []
 
