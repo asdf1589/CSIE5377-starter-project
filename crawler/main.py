@@ -20,6 +20,8 @@ import aiohttp
 from .config import CrawlerConfig
 from .logging_config import setup_logging
 from . import metrics
+from . import stats
+from .checkpoint import checkpoint_loop, load_checkpoint
 from .frontier import Frontier
 from .ratelimiter import DomainRateLimiter
 from .robots import RobotsCache
@@ -35,17 +37,33 @@ def load_seeds(path: str) -> list[str]:
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
+async def _runtime_limit(hours: float, stop_event: asyncio.Event) -> None:
+    await asyncio.sleep(hours * 3600)
+    logger.warning(f"max_runtime_reached hours={hours}; stopping")
+    stop_event.set()
+
+
 async def run(config: CrawlerConfig) -> None:
     setup_logging()
     metrics.start_metrics_server(config.metrics_port)
     logger.info(f"metrics_server_started port={config.metrics_port}")
 
-    seeds = load_seeds(config.seeds_file)
-    frontier = Frontier(maxsize=config.queue_maxsize)
-    added = await frontier.add_many(seeds)
+    if config.resume_from:
+        checkpoint = load_checkpoint(config.resume_from)
+        frontier = await Frontier.from_snapshot(checkpoint["frontier"], maxsize=config.queue_maxsize)
+        stats.STATS.load_dict(checkpoint["stats"])
+        logger.info(
+            f"resumed_from_checkpoint path={config.resume_from} "
+            f"seen={frontier.seen_count} pending={frontier.qsize()}"
+        )
+    else:
+        seeds = load_seeds(config.seeds_file)
+        frontier = Frontier(maxsize=config.queue_maxsize)
+        added = await frontier.add_many(seeds)
+        logger.info(f"seeds_loaded added={added} in_file={len(seeds)} duplicates={len(seeds) - added}")
+
     metrics.URLS_SEEN_TOTAL.set(frontier.seen_count)
     metrics.QUEUE_DEPTH.set(frontier.qsize())
-    logger.info(f"seeds_loaded added={added} in_file={len(seeds)} duplicates={len(seeds) - added}")
 
     rate_limiter = DomainRateLimiter(config.per_domain_concurrency, config.per_domain_delay)
     store = ResultStore(config.output_dir, save_body=config.save_body)
@@ -72,6 +90,14 @@ async def run(config: CrawlerConfig) -> None:
             for i in range(config.max_concurrency)
         ]
         reporter_task = asyncio.create_task(status_reporter(frontier, config.status_interval))
+        checkpoint_task = asyncio.create_task(
+            checkpoint_loop(config.checkpoint_path, config.checkpoint_interval_seconds, frontier)
+        )
+        runtime_task = (
+            asyncio.create_task(_runtime_limit(config.max_runtime_hours, stop_event))
+            if config.max_runtime_hours is not None
+            else None
+        )
 
         start = time.monotonic()
         join_task = asyncio.create_task(frontier.join())
@@ -85,9 +111,15 @@ async def run(config: CrawlerConfig) -> None:
             t.cancel()
 
         reporter_task.cancel()
+        checkpoint_task.cancel()
+        if runtime_task is not None:
+            runtime_task.cancel()
         for t in worker_tasks:
             t.cancel()
-        await asyncio.gather(*worker_tasks, reporter_task, join_task, stop_task, return_exceptions=True)
+        background_tasks = [reporter_task, checkpoint_task]
+        if runtime_task is not None:
+            background_tasks.append(runtime_task)
+        await asyncio.gather(*worker_tasks, *background_tasks, join_task, stop_task, return_exceptions=True)
 
         elapsed = time.monotonic() - start
         logger.info(f"crawl_complete elapsed_s={elapsed:.1f} urls_seen={frontier.seen_count}")
