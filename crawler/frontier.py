@@ -19,6 +19,8 @@ Two architecture decisions worth calling out:
 import asyncio
 from urllib.parse import urlparse, urlunparse
 
+from . import metrics
+
 
 def normalize_url(url: str) -> str:
     """Best-effort canonicalization so trivially-equivalent URLs collide.
@@ -37,11 +39,22 @@ def normalize_url(url: str) -> str:
     return urlunparse((scheme, netloc, path, "", parsed.query, ""))
 
 
+def domain_of(url: str) -> str:
+    """Netloc of a (normalized) URL. Duplicates
+    ratelimiter.DomainRateLimiter.domain_of() by design: crawler-spec.md's
+    module list says not to touch ratelimiter.py for this change, and
+    it's one line, so a shared helper isn't worth the cross-module
+    coupling.
+    """
+    return urlparse(url).netloc
+
+
 class Frontier:
     def __init__(self, maxsize: int = 0):
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=maxsize)
         self._seen: set[str] = set()
         self._lock = asyncio.Lock()
+        self._domain_page_counts: dict[str, int] = {}
 
     async def add(self, url: str) -> bool:
         """Returns True if the (normalized) URL was newly added."""
@@ -50,6 +63,11 @@ class Frontier:
             if norm in self._seen:
                 return False
             self._seen.add(norm)
+            domain = domain_of(norm)
+            is_new_domain = domain not in self._domain_page_counts
+            self._domain_page_counts[domain] = self._domain_page_counts.get(domain, 0) + 1
+        if is_new_domain:
+            metrics.DISTINCT_DOMAINS_TOTAL.set(len(self._domain_page_counts))
         await self._queue.put(norm)  # may block: that's the backpressure
         return True
 
@@ -59,6 +77,9 @@ class Frontier:
             if u and await self.add(u):
                 added += 1
         return added
+
+    def domain_page_count(self, domain: str) -> int:
+        return self._domain_page_counts.get(domain, 0)
 
     async def get(self) -> str:
         return await self._queue.get()

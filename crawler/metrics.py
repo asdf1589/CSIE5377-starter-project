@@ -34,6 +34,10 @@ ROBOTS_SKIPPED_TOTAL = Counter(
 QUEUE_DEPTH = Gauge("crawler_queue_depth", "URLs currently waiting in the frontier")
 INFLIGHT = Gauge("crawler_inflight_requests", "Requests currently in flight")
 URLS_SEEN_TOTAL = Gauge("crawler_urls_seen_total", "Distinct URLs seen so far (post-dedup)")
+DISTINCT_DOMAINS_TOTAL = Gauge(
+    "crawler_distinct_domains_total",
+    "Distinct domains ever added to the frontier (seeds + followed links)",
+)
 
 
 def status_bucket(status: int) -> str:
