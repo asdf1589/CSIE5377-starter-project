@@ -74,10 +74,20 @@ Useful flags (`python3 -m crawler.main --help` for the full list):
 --status-interval SEC        console status line frequency    (default 5)
 --save-body                  persist raw response bodies under output/pages/
 --no-robots                  disable robots.txt checks (not recommended)
+--max-runtime-hours HOURS    wall-clock auto-stop (e.g. 48)
+--checkpoint-interval SEC    seconds between checkpoint writes (default 300)
+--checkpoint-path PATH       checkpoint file location (default output/checkpoint.json)
+--resume PATH                resume from a checkpoint instead of loading --seeds
+--follow-links               enable link extraction / frontier growth
+--max-pages-per-domain N     crawl-trap cap; only matters with --follow-links (default 20)
 ```
 
-Output: `output/results.jsonl` (one record per URL) and
-`output/summary.json` (final counts + throughput) after the run.
+Output: `output/results.jsonl` (one record per URL, now including
+`domain`, `robots_blocked`, and — when `--follow-links` is on —
+`referrer`), `output/summary.json` (final counts + throughput), and
+`output/checkpoint.json` (periodic, atomic; used by `--resume`) after
+the run. Run `python3 scripts/summarize.py` afterward for a
+per-domain `output/domain_summary.csv` / `.json` rollup.
 
 While it's running: `curl http://localhost:9090/metrics`, or point
 Prometheus at it (`monitoring/`).
@@ -92,8 +102,9 @@ shutdown via queue-drain all confirmed working.
 
 ## Known limitations / things a "real" version would need
 
-- No link-following (see Extension ideas #1) — this crawls exactly the
-  seed list, once each.
+- Link-following is opt-in (`--follow-links`, default off) and capped
+  at `--max-pages-per-domain` per domain to defend against crawl traps
+  — no `--max-depth`, breadth-first via the existing FIFO frontier.
 - `RobotFileParser` is fetched but not periodically refreshed for very
   long-running crawls (fine for a 1000-URL, single-run job).
 - Response bodies aren't parsed (no HTML parsing, no content
@@ -107,14 +118,14 @@ shutdown via queue-drain all confirmed working.
 
 ## Extension ideas (in roughly increasing order of "architect" difficulty)
 
-1. **Follow links** — turn this into a real crawler: parse HTML, extract
-   `<a href>`, normalize + `frontier.add()` new URLs, add a `--max-depth`
-   and same-domain-only filter. Forces you to think about crawl traps
-   (infinite calendar pages, session-id URLs) and frontier growth.
-2. **Durable, resumable frontier** — replace the in-memory
-   `asyncio.Queue` + `set()` with something backed by SQLite or Redis, so
-   a crashed run can resume instead of restarting from scratch. Forces
-   you to think about at-least-once vs exactly-once processing.
+1. ~~Follow links~~ — done (`--follow-links`, `linkextract.py`,
+   per-domain crawl-trap cap). Next step up: content-aware filtering
+   (same-domain-only mode, URL patterns to skip).
+2. ~~Durable, resumable frontier~~ — partially done: JSON checkpoint +
+   `--resume` survives a crash, but it's still in-memory between
+   checkpoints (a `kill -9` between two checkpoint writes loses that
+   window's progress) and single-process. Swapping the checkpoint file
+   for SQLite/Redis would remove both limits.
 3. **Multi-process / distributed** — split the frontier out into Redis
    or a message queue (RabbitMQ/Kafka) and run multiple crawler
    processes (or machines) pulling from it. This is the natural "next
