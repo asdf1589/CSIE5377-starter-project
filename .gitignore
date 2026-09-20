@@ -1,5 +1,16 @@
-.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+.venv/
+
+# Crawl output: results.jsonl, metrics_log.csv, checkpoint.json, pages/.
+# Cited figures live in results/ instead, which is tracked.
 output/
+
+.superpowers/
+
+.DS_Store
+.vscode/
+*.swp
+*.swo
