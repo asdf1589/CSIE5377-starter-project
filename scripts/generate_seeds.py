@@ -1,5 +1,5 @@
 """
-Generate seeds.txt for edu_crawler.
+Generate seeds.txt for CSIE5377 Starter Project.
 
 Two ingredients, combined for different reasons:
 
