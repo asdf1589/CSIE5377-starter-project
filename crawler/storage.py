@@ -19,7 +19,7 @@ from .fetcher import FetchResult
 
 
 class ResultStore:
-    def __init__(self, output_dir: str, save_body: bool = False):
+    def __init__(self, output_dir: str, save_body: bool = False) -> None:
         self.output_dir = output_dir
         self.save_body = save_body
         os.makedirs(output_dir, exist_ok=True)

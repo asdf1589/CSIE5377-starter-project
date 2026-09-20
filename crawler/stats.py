@@ -9,7 +9,7 @@ a dashboard/alerting system) -- both cheap enough to keep. Safe without
 locks because asyncio runs this on a single thread; no other coroutine can
 interleave inside a plain `+= 1`.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

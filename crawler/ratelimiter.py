@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 
 
 class DomainRateLimiter:
-    def __init__(self, per_domain_concurrency: int, per_domain_delay: float):
+    def __init__(self, per_domain_concurrency: int, per_domain_delay: float) -> None:
         self._per_domain_concurrency = per_domain_concurrency
         self._per_domain_delay = per_domain_delay
         self._semaphores: dict[str, asyncio.Semaphore] = defaultdict(

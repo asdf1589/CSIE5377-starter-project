@@ -41,16 +41,19 @@ def normalize_url(url: str) -> str:
 
 def domain_of(url: str) -> str:
     """Netloc of a (normalized) URL. Duplicates
-    ratelimiter.DomainRateLimiter.domain_of() by design: crawler-spec.md's
-    module list says not to touch ratelimiter.py for this change, and
-    it's one line, so a shared helper isn't worth the cross-module
-    coupling.
+    ratelimiter.DomainRateLimiter.domain_of() by design: it is a single
+    `urlparse().netloc` call, and factoring it into a shared helper module
+    would couple the frontier to the rate limiter (or add a third module
+    both must import) to save one line. The duplication is the cheaper
+    trade; if the two ever need to disagree about what a "domain" is --
+    say one starts stripping `www.` or honouring the public suffix list --
+    they can diverge without either having to unpick a shared abstraction.
     """
     return urlparse(url).netloc
 
 
 class Frontier:
-    def __init__(self, maxsize: int = 0):
+    def __init__(self, maxsize: int = 0) -> None:
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=maxsize)
         self._seen: set[str] = set()
         self._lock = asyncio.Lock()

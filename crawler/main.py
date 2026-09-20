@@ -17,17 +17,16 @@ import time
 
 import aiohttp
 
-from .config import CrawlerConfig
-from .logging_config import setup_logging
-from . import metrics
-from . import stats
+from . import metrics, stats
 from .checkpoint import checkpoint_loop, load_checkpoint, write_checkpoint
+from .config import CrawlerConfig
 from .frontier import Frontier
+from .logging_config import setup_logging
 from .ratelimiter import DomainRateLimiter
+from .reporter import status_reporter, write_summary
 from .robots import RobotsCache
 from .storage import ResultStore
 from .worker import worker
-from .reporter import status_reporter, write_summary
 
 logger = logging.getLogger("crawler.main")
 

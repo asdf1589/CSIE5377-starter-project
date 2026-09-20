@@ -21,7 +21,7 @@ logger = logging.getLogger("crawler.robots")
 
 
 class RobotsCache:
-    def __init__(self, session: aiohttp.ClientSession, user_agent: str):
+    def __init__(self, session: aiohttp.ClientSession, user_agent: str) -> None:
         self._session = session
         self._user_agent = user_agent
         self._cache: dict[str, RobotFileParser | None] = {}

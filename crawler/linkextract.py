@@ -12,11 +12,11 @@ from urllib.parse import urljoin
 
 
 class _LinkExtractor(HTMLParser):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.hrefs: list[str] = []
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag, attrs) -> None:
         if tag != "a":
             return
         for name, value in attrs:
