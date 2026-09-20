@@ -35,10 +35,13 @@ python -m crawler.main --seeds seeds.txt --concurrency 50
 
 ## 引用數值的來源
 
-文中引用的數值集中保存於 `results/`：`results/summary-48h.json` 為 48 小時
-視窗彙總，`results/throughput-hourly.csv` 為每小時抓取次數。
+文中引用的數值集中保存於 `results/`：`summary-48h.json` 為 48 小時視窗
+彙總，`throughput-hourly.csv` 為每小時抓取次數，`workers-hourly.csv`、
+`inflight-ceiling-30min.csv`、`inflight-hist-h48.csv` 與
+`same-domain-gap-hist.csv` 為推導有效並發塌陷所用的逐小時彙總。
 
-[02-48h-run-results.md](./02-48h-run-results.md) 的三張圖存放於 `rsc/`，由
+[02-48h-run-results.md](./02-48h-run-results.md) 的五張圖與
+[slides.md](./slides.md) 額外使用的兩張圖都存放於 `rsc/`，由
 `scripts/make_figures.py` 從上述資料重新產生。
 
 原始輸出位於 `output/`，該目錄被 `.gitignore` 排除、不進入版本控制。
