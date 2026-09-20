@@ -39,28 +39,35 @@ def load_seeds(path: str) -> list[str]:
 
 async def _runtime_limit(hours: float, stop_event: asyncio.Event) -> None:
     await asyncio.sleep(hours * 3600)
-    logger.warning(f"max_runtime_reached hours={hours}; stopping")
+    logger.warning("max_runtime_reached", extra={"hours": hours})
     stop_event.set()
 
 
 async def run(config: CrawlerConfig) -> None:
     setup_logging()
     metrics.start_metrics_server(config.metrics_port)
-    logger.info(f"metrics_server_started port={config.metrics_port}")
+    logger.info("metrics_server_started", extra={"port": config.metrics_port})
 
     if config.resume_from:
         checkpoint = load_checkpoint(config.resume_from)
         frontier = await Frontier.from_snapshot(checkpoint["frontier"], maxsize=config.queue_maxsize)
         stats.STATS.load_dict(checkpoint["stats"])
         logger.info(
-            f"resumed_from_checkpoint path={config.resume_from} "
-            f"seen={frontier.seen_count} pending={frontier.qsize()}"
+            "resumed_from_checkpoint",
+            extra={
+                "path": config.resume_from,
+                "seen": frontier.seen_count,
+                "pending": frontier.qsize(),
+            },
         )
     else:
         seeds = load_seeds(config.seeds_file)
         frontier = Frontier(maxsize=config.queue_maxsize)
         added = await frontier.add_many(seeds)
-        logger.info(f"seeds_loaded added={added} in_file={len(seeds)} duplicates={len(seeds) - added}")
+        logger.info(
+            "seeds_loaded",
+            extra={"added": added, "count": len(seeds), "duplicates": len(seeds) - added},
+        )
 
     metrics.URLS_SEEN_TOTAL.set(frontier.seen_count)
     metrics.QUEUE_DEPTH.set(frontier.qsize())
@@ -106,7 +113,7 @@ async def run(config: CrawlerConfig) -> None:
             [join_task, stop_task], return_when=asyncio.FIRST_COMPLETED
         )
         if stop_task in done:
-            logger.warning("shutdown_signal_received; cancelling workers")
+            logger.warning("shutdown_signal_received")
         for t in pending:
             t.cancel()
 
@@ -122,11 +129,17 @@ async def run(config: CrawlerConfig) -> None:
         await asyncio.gather(*worker_tasks, *background_tasks, join_task, stop_task, return_exceptions=True)
 
         elapsed = time.monotonic() - start
-        logger.info(f"crawl_complete elapsed_s={elapsed:.1f} urls_seen={frontier.seen_count}")
+        logger.info(
+            "crawl_complete",
+            extra={"elapsed_s": round(elapsed, 1), "seen": frontier.seen_count},
+        )
         try:
             write_checkpoint(config.checkpoint_path, frontier)
         except Exception as e:
-            logger.error(f"checkpoint_failed path={config.checkpoint_path} err={e}")
+            logger.error(
+                "checkpoint_failed",
+                extra={"path": config.checkpoint_path, "error": str(e)},
+            )
         write_summary(config.output_dir, elapsed, frontier.seen_count)
 
 

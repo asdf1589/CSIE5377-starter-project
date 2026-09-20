@@ -13,9 +13,13 @@ import sys
 import time
 
 # Fields we allow callers to attach via `logger.info(msg, extra={...})`.
+# A key that is not listed here is silently dropped from the JSON payload,
+# so any new `extra=` key must be registered below or its data is lost.
 _EXTRA_FIELDS = (
     "url", "domain", "status", "elapsed_ms", "attempt",
     "worker_id", "queue_depth", "seen", "inflight",
+    "path", "port", "count", "added", "duplicates",
+    "pending", "elapsed_s", "hours", "error",
 )
 
 

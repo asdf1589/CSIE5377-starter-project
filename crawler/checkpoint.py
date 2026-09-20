@@ -49,8 +49,8 @@ async def checkpoint_loop(path: str, interval: float, frontier) -> None:
             await asyncio.sleep(interval)
             try:
                 write_checkpoint(path, frontier)
-                logger.info(f"checkpoint_written path={path}")
+                logger.info("checkpoint_written", extra={"path": path})
             except Exception as e:
-                logger.error(f"checkpoint_failed path={path} err={e}")
+                logger.error("checkpoint_failed", extra={"path": path, "error": str(e)})
     except asyncio.CancelledError:
         pass
