@@ -1,0 +1,14 @@
+{
+  "span_s": 172800.0,
+  "records": 1287294,
+  "fetch_attempts": 1264115,
+  "robots_skipped": 23179,
+  "ok": 1199676,
+  "failed": 64439,
+  "records_with_retries": 18615,
+  "distinct_urls": 1287294,
+  "distinct_domains": 165730,
+  "distinct_domains_fetched": 158885,
+  "throughput_per_s": 7.3155,
+  "bytes_received": null
+}
