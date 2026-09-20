@@ -1,17 +1,18 @@
 # 01. 系統設計
 
-本文件說明 `edu_crawler` 的系統設計。這是一支單機、單一 process 的非同步網頁
-爬蟲，設計目標是在給定的 wall-clock 時間上限內無人值守運行至自動停止。內容涵
-蓋並發模型、frontier（待爬佇列）、禮貌性與韌性控制、結果紀錄格式、運行生命週
-期，以及可觀測性介面。
+本文件說明 CSIE5377 Starter Project 的系統設計。這是一支單機、單一 process
+的非同步網頁爬蟲，設計目標是在給定的 wall-clock 時間上限內無人值守運行至自動
+停止。內容涵蓋並發模型、frontier（待爬佇列）、禮貌性與韌性控制、結果紀錄格式、
+運行生命週期，以及可觀測性介面。
 
 ## 1.1 範圍與定位
 
-`edu_crawler` 是單一 Python process、單一 asyncio event loop 的網頁爬蟲，具
-備下列能力：全域並發上限控制、兩層彼此獨立的禮貌性限速、robots.txt 合規、含
-指數退避與隨機抖動的重試、可在當機後續跑的週期性 checkpoint、受防爬蟲陷阱上
-限約束的連結追蹤、三層可觀測性介面，以及跑完後的網域彙整報表。它處理的是
-HTTP 回應本身與頁面上的 `<a href>` 連結；內容解析、排名與索引都不在範圍內。
+CSIE5377 Starter Project 是單一 Python process、單一 asyncio event loop 的網
+頁爬蟲，具備下列能力：全域並發上限控制、兩層彼此獨立的禮貌性限速、robots.txt
+合規、含指數退避與隨機抖動的重試、可在當機後續跑的週期性 checkpoint、受防爬
+蟲陷阱上限約束的連結追蹤、三層可觀測性介面，以及跑完後的網域彙整報表。它處理
+的是 HTTP 回應本身與頁面上的 `<a href>` 連結；內容解析、排名與索引都不在範圍
+內。
 
 運行邊界由兩個機制界定：`--max-runtime-hours` 給定時間上限，
 `--max-pages-per-domain` 給定單一網域的頁數上限。兩者都是為了讓一次性、不可
@@ -70,9 +71,9 @@ asyncio 讓單一 process、單一執行緒就能同時維持數十到數千條�
 IPC 開銷。
 
 全域並發上限由 `aiohttp.TCPConnector(limit=...)` 施加，對應 CLI 參數
-`--concurrency`，預設值為 50——亦即任何時刻最多 50 個請求在飛。worker 數量與
+`--concurrency`，預設值為 50，亦即任何時刻最多 50 個請求在飛。worker 數量與
 這個上限綁在同一個旋鈕上：`main.py` 啟動 `--concurrency` 個 worker coroutine，
-每個 worker 跑同一個迴圈——從 frontier 取出一個網址、檢查 robots.txt、取得限
+每個 worker 跑同一個迴圈：從 frontier 取出一個網址、檢查 robots.txt、取得限
 速名額、抓取、寫入紀錄、（選擇性）追蹤連結。因為兩者同值，不會出現 worker 數
 多於連線上限而在 connector 層互相排隊的情形。
 
@@ -80,7 +81,7 @@ IPC 開銷。
 
 待爬網址存放在 `asyncio.Queue(maxsize=...)`，容量由 `--queue-maxsize` 指定，
 預設 2000。刻意選擇有界而非無限佇列：有界佇列讓佇列本身成為一種天然的反壓
-（backpressure）機制——抓取速度跟不上連結發現速度時，佇列會塞滿並擋住新網址加
+（backpressure）機制：抓取速度跟不上連結發現速度時，佇列會塞滿並擋住新網址加
 入，而不是讓記憶體無限膨脹。這個預設值適用於固定種子清單；開啟連結追蹤後連結
 發現速度遠高於抓取速度，因此 §2.1 的正式運行把它提高到 50,000。
 
@@ -102,7 +103,7 @@ Frontier 提供兩個入列方法。`add()` 在佇列已滿時會 `await queue.p
 `queue.put_nowait()`，佇列已滿時立刻回傳 `False` 並放棄該網址。除此之外兩者
 行為完全相同：都做正規化、都檢查並更新 `_seen`、都累加每網域頁數、都記錄
 referrer。被放棄的網址不會寫入 `_seen`，因此佇列之後有空間時仍有機會被重新發
-現——放棄的語意是「這次不排程」，而不是「永久排除」。
+現。放棄的語意是「這次不排程」，而不是「永久排除」。
 
 種子清單載入（`add_many()`）使用會阻塞的 `add()`：此時尚無任何 worker 在跑，
 等待騰出空間本來就是正確行為。連結追蹤（`worker._follow_links()`）一律使用
@@ -113,6 +114,36 @@ referrer。被放棄的網址不會寫入 `_seen`，因此佇列之後有空間�
 這個循環在結構上不可能成立，代價是高負載下會丟棄連結，丟棄數量由
 `crawler_links_dropped_queue_full_total` 計數。
 
+### 1.4.2 種子清單的組成
+
+佇列的初始內容由 `scripts/generate_seeds.py` 產生，輸出一份純文字的網址清
+單。清單刻意由兩種來源組成，各自解決不同問題：
+
+- **樞紐頁面**（16 個，硬編在腳本裡）：維基百科的各種「列表的列表」與
+  Curlie 目錄頁。這類頁面的特徵是外連結密度高、且指向大量*不同*網域，開啟
+  `--follow-links` 後負責把 frontier 推離最初那幾個網域，避免整場爬取困在同
+  一個叢集裡。
+- **Tranco 排名的分層抽樣**：Tranco 是一份研究用、抗操弄的網站人氣排名
+  （<https://tranco-list.eu>）。腳本把前 500,000 名切成四個區間（第 1–1,000
+  名、1,000–10,000 名、10,000–100,000 名、100,000–500,000 名），再從每個區間
+  等量隨機抽樣。
+
+分層而非直接取前 N 名，是因為全球前 1,000 名由少數科技巨頭及其子網域與 CDN
+主導：直接取用會嚴重低估網域多樣性，並讓樣本集中在反爬蟲機制最強的站台上。
+
+抽樣由 `--seed`（預設 42）控制，同樣的種子與同一份 Tranco 清單會產生同樣的
+輸出。腳本需要 `tranco` 套件：
+
+```bash
+pip install tranco
+
+# 48 小時運行所用的那份 seeds.txt：16 個樞紐頁面 + 984 個抽樣網域 = 1,000 筆
+python scripts/generate_seeds.py --count 984 --out seeds.txt
+```
+
+`--count` 只計抽樣網域，不含樞紐頁面。輸出檔以 `#` 註解標示兩段來源，載入時
+由 `add_many()` 以阻塞式 `add()` 依序入列（§1.4.1）。
+
 ## 1.5 連結追蹤與防爬蟲陷阱上限
 
 `--follow-links` 啟用連結追蹤；不帶這個參數時，爬蟲只處理種子清單上的網址，
@@ -120,7 +151,7 @@ referrer。被放棄的網址不會寫入 `_seen`，因此佇列之後有空間�
 `html.parser` 掃出頁面上所有 `<a href>`，以原網址為 base 轉成絕對網址後加進
 待爬佇列。刻意不引入 BeautifulSoup 或 lxml：這是一支爬蟲而非內容解析器，需要
 的只是把每個 href 抽出來，`html.parser` 作為標準庫的 SAX 式 tokenizer 剛好足
-夠，而且對格式不良的 HTML 有容錯——解析錯誤只讓該頁少抽到幾條連結，不會讓
+夠，而且對格式不良的 HTML 有容錯。解析錯誤只讓該頁少抽到幾條連結，不會讓
 worker 崩潰。
 
 連結追蹤天生帶有一個危險：爬蟲陷阱（crawl trap）。某些網站的「下一頁」連結會
@@ -150,9 +181,9 @@ worker 會一直握著該網域的併發名額，餓死其他想抓同網域的 
 序不巧的話，仍然可能同時對某個小網站發出 20 個並發請求，導致被目標站台限流甚
 至封鎖 IP。因此另外設置兩個與全域上限彼此獨立的機制：
 
-- 每網域併發數上限（`--per-domain-concurrency`，預設 2）——以「每個網域各自一
+- 每網域併發數上限（`--per-domain-concurrency`，預設 2）：以「每個網域各自一
   個」的 `asyncio.Semaphore` 實作，限制同一網域同時最多幾個請求在飛。
-- 每網域最小請求間隔（`--per-domain-delay`，預設 1.0 秒）——即使併發數是 1，
+- 每網域最小請求間隔（`--per-domain-delay`，預設 1.0 秒）：即使併發數是 1，
   若沒有這個限制，同一網域仍可能每隔幾毫秒就被打一次（前一個回應一回來就立刻
   發下一個）。這個機制強制同網域「請求發起時間」之間至少間隔一段時間。
 
@@ -166,7 +197,7 @@ worker 會一直握著該網域的併發名額，餓死其他想抓同網域的 
 每個 origin（scheme 加 host）的 robots.txt 只在第一次遇到時抓取一次並快取於
 `RobotsCache`，內部以標準庫的 `urllib.robotparser.RobotFileParser` 解析。首
 次抓取由該 origin 專屬的 `asyncio.Lock` 保護，避免多個 worker 同時去拉同一份
-robots.txt——那會讓請求數翻倍，反而違背這個機制本身要保護的禮貌性。
+robots.txt。那會讓請求數翻倍，反而違背這個機制本身要保護的禮貌性。
 
 採用 fail-open：robots.txt 不存在、回應非 200、或抓取本身失敗時，預設允許抓
 取。fail-open 是正式爬蟲的慣例做法；在規模更大或更敏感的場景，fail-closed 才
@@ -187,7 +218,7 @@ robots.txt——那會讓請求數翻倍，反而違背這個機制本身要保�
 ## 1.7 結果紀錄與儲存格式
 
 結果以 append-only JSON Lines 寫入 `output/results.jsonl`。選擇 JSONL 而非
-SQLite 的理由是：它 crash-safe——唯一可能的損毀形式是最後一行只寫了一半，而這
+SQLite 的理由是：它 crash-safe，唯一可能的損毀形式是最後一行只寫了一半，而這
 種情況既容易偵測也容易捨棄；它不需要 schema migration；而且可以直接
 `tail -f` 觀察，事後也能直接餵進 pandas 或 duckdb。多個 worker coroutine 併
 發呼叫寫入，因此寫入由一個 `asyncio.Lock` 序列化，維持單一寫入者、只追加的語
@@ -218,8 +249,8 @@ coroutine，睡滿指定時數後去 `set()` 那個 SIGINT 與 SIGTERM 同樣會
 
 運行是一次性、不可重跑的，因此狀態必須週期性落地。`--checkpoint-interval`
 （預設 300 秒）決定寫入頻率。checkpoint 的內容是 `Frontier.snapshot_state()`
-回傳的三個 key——`seen`（所有曾入列的網址）、`pending`（仍在等待 worker 的網
-址）、`domain_page_counts`（每網域頁數統計），也就是 §1.4 描述的那三組結構——
+回傳的三個 key：`seen`（所有曾入列的網址）、`pending`（仍在等待 worker 的網
+址）、`domain_page_counts`（每網域頁數統計），也就是 §1.4 描述的那三組結構，
 再加上累計統計數字。`pending` 除了佇列當前內容，還包含 `add()` 已經寫入
 `_seen`、但 `await queue.put()` 尚未完成的網址；少了這一塊，卡在該空窗期的網
 址會既不在佇列裡也不在快照裡，續跑時又被 `_seen` 擋下而永遠遺失。
@@ -228,7 +259,7 @@ coroutine，睡滿指定時數後去 `set()` 那個 SIGINT 與 SIGTERM 同樣會
 才用 `os.replace()` 覆蓋原檔。`os.replace()` 在 POSIX 與 Windows 上都是原子
 操作，因此即使 process 在 write 與 replace 之間被 `kill -9`，也不會留下一份
 半截的 checkpoint；上一次成功完成的版本永遠完整可用。寫入失敗（磁碟滿、權限
-錯誤、路徑不存在）只記錄 log 並讓迴圈繼續，不向外拋出——否則該 coroutine 會靜
+錯誤、路徑不存在）只記錄 log 並讓迴圈繼續，不向外拋出。否則該 coroutine 會靜
 默死亡，讓一次長時間的無人值守運行在毫無徵兆的情況下失去後續所有 checkpoint。
 `--resume <path>` 從這份存檔直接重建 frontier 與統計計數器，跳過載入種子清單，
 避免整批已抓過的網址被重抓。
@@ -242,16 +273,16 @@ coroutine，睡滿指定時數後去 `set()` 那個 SIGINT 與 SIGTERM 同樣會
 `crawler_queue_depth` 相對於 `--queue-maxsize`。另有
 `crawler_urls_seen_total`、`crawler_robots_skipped_total`、
 `crawler_retries_total`，以及兩個與連結追蹤直接相關的指標：
-`crawler_distinct_domains_total` 記錄曾加入 frontier 的相異網域數——開啟連結
-追蹤後，相異網址數與相異網域數是兩件不同的事，必須分開追蹤——而
+`crawler_distinct_domains_total` 記錄曾加入 frontier 的相異網域數（開啟連結
+追蹤後，相異網址數與相異網域數是兩件不同的事，必須分開追蹤），而
 `crawler_links_dropped_queue_full_total` 記錄因佇列已滿而被丟棄的連結數（§
 1.4.1）。
 
 三種觀察方式對應三種受眾：
 
-- 結構化 log（`logging_config.py`）——JSON Lines 輸出到 stdout，便於用 `jq`
+- 結構化 log（`logging_config.py`）：JSON Lines 輸出到 stdout，便於用 `jq`
   過濾，或匯入 Loki、Elasticsearch 查詢分析。
-- 終端機狀態列（`reporter.py`）——每 `--status-interval` 秒印一行人類可讀的摘
+- 終端機狀態列（`reporter.py`）：每 `--status-interval` 秒印一行人類可讀的摘
   要，開發時盯著終端機用。
 - Prometheus 指標（`metrics.py`，透過 `prometheus_client` 曝露在
   `:9090/metrics`）。
@@ -259,26 +290,10 @@ coroutine，睡滿指定時數後去 `set()` 那個 SIGINT 與 SIGTERM 同樣會
 `:9090/metrics` 有兩種取用方式。`monitoring/docker-compose.yml` 提供
 Prometheus 加 Grafana 的標準組合。不便安裝 Docker 時，
 `scripts/watch_metrics.py` 是零相依的替代方案：它只用標準庫輪詢 `/metrics`，
-印出精簡的即時儀表板，並把每一次取樣追加寫入 `output/metrics_log.csv`——§2.3
+印出精簡的即時儀表板，並把每一次取樣追加寫入 `output/metrics_log.csv`；§2.3
 的時間序列就來自這個檔案。
 
-## 1.10 跑完後的網域彙整
-
-`scripts/summarize.py` 讀取整份 `results.jsonl`，依網域彙整出 `domain`、
-`first_seen_ts`、`success_count`、`fail_count`、`robots_blocked` 五個欄位，
-同時輸出 `output/domain_summary.csv` 與 `output/domain_summary.json` 兩種格
-式。
-
-每筆紀錄只會落入 success、fail、robots_blocked 其中一個桶，因此三者之和恆等
-於該網域的紀錄總數。`robots_blocked` 與 `fail_count` 分開計數是刻意的：選擇
-不抓（禮貌性）與抓了但失敗（可靠性）是兩件不同的事，混在一起會讓遵守
-robots.txt 的紀錄在報表上看起來像錯誤。
-
-這支腳本設計成跑完之後手動執行一次，而不是邊爬邊即時彙整，目的是讓即時寫入的
-熱路徑（`storage.py` 的 append-only 寫檔）維持越簡單越好；一次性的批次運算完
-全可以等資料到齊之後再做。
-
-## 1.11 測試策略
+## 1.10 測試策略
 
 測試套件完全不使用 mock：整個 `tests/` 目錄沒有任何 `unittest.mock`、
 `monkeypatch` 或 `patch()`。會實際發出網路請求的邏輯（fetcher、robots.txt 檢
@@ -294,10 +309,9 @@ process，驗證前後兩次抓取的網址完全不重疊、且聯集涵蓋全�
 止這個最嚴苛的情況。
 
 另有一個回歸測試直接驅動多個 worker，讓每個 worker 各自處理一個連結數超過佇
-列容量的頁面，斷言整場爬取仍然跑完——鎖住 §1.4.1 的非阻塞入列語意。全套共 55
-個測試，分布於 12 個檔案。
+列容量的頁面，斷言整場爬取仍然跑完，鎖住 §1.4.1 的非阻塞入列語意。
 
-## 1.12 技術棧
+## 1.11 技術棧
 
 | 類別 | 技術／套件 | 用途 |
 |---|---|---|
@@ -309,26 +323,13 @@ process，驗證前後兩次抓取的網址完全不重疊、且聯集涵蓋全�
 | 可觀測性 | `prometheus_client` | 曝露 Counter、Gauge 與 Histogram 指標 |
 | 資料持久化 | JSON / JSON Lines（標準庫） | 結果紀錄、checkpoint 與 log 格式 |
 | 測試框架 | `pytest` + `pytest-asyncio` | 單元測試與整合測試，含真實子行程加 SIGKILL 測試 |
-| 版本控制 | `git` | 原始碼版本管理 |
 
-## 1.13 已知限制
+## 1.12 已知限制
 
-- **記憶體中的狀態沒有上限，也沒有淘汰機制** —— `_seen`、referrer 對應表、
+- **記憶體中的狀態沒有上限，也沒有淘汰機制**：`_seen`、referrer 對應表、
   `RobotsCache` 中的 `RobotFileParser` 物件，以及 `ratelimiter.py` 裡三個以
   網域為 key 的 dict（semaphore、lock、last-start），全部只增不減。長時間運
   行下這是吞吐量衰減的主要待證假設，見 §2.3.4。
-- **`write_checkpoint()` 是同步的，會阻塞 event loop** —— 它在 event loop 執
+- **`write_checkpoint()` 是同步的，會阻塞 event loop**：它在 event loop 執
   行緒上把整個 `_seen` 序列化成 JSON，成本隨已看過的網址數成長，寫入期間所有
   worker 都無法推進。
-- **`bytes_received` 無法歸屬到個別紀錄** —— 未開啟 `--save-body` 時，單筆紀
-  錄不帶回應大小，該數值只以 process 生命期的累計計數器存在，無法切分到任意
-  時間視窗，見 §2.5。
-- **全域計數器狀態會跨測試殘留** —— `metrics.py` 與 `stats.py` 的計數器是模
-  組層級的單例，測試套件沒有 autouse fixture 重置它們，因此測試之間理論上可
-  能透過執行順序互相影響。
-- **`summary.json` 的 `throughput_per_s` 不可直接引用** —— 該欄位以跨
-  `--resume` 還原的累計 `fetched` 為分子、只計算最後一個 process 存活時間的
-  `elapsed_s` 為分母，兩者不同源，相除的結果不對應任何一段真實區間；視窗內的
-  正確吞吐量請以 `results/summary-48h.json` 為準。
-- **沒有 CI** —— 測試只在本機以 `pytest` 執行，沒有任何自動化流程在提交時把
-  關。

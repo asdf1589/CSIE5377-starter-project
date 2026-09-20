@@ -1,14 +1,14 @@
 ---
 marp: true
 paginate: true
-header: 'edu_crawler — 48 小時無人值守爬取'
+header: 'CSIE5377 Starter Project — 48 小時無人值守爬取'
 ---
 
-# edu_crawler
+# CSIE5377 Starter Project
 
 ## 單機非同步爬蟲，無人值守連續運行 48 小時
 
-NTU CSIE5376 · 索引見 `docs/README.md` · 完整文件為 `docs/01-system-design.md` 與 `docs/02-48h-run-results.md`
+NTU CSIE5377 · 索引見 `docs/README.md` · 完整文件為 `docs/01-system-design.md` 與 `docs/02-48h-run-results.md`
 
 ---
 
@@ -49,7 +49,7 @@ NTU CSIE5376 · 索引見 `docs/README.md` · 完整文件為 `docs/01-system-de
 
 - 絕大部分時間花在等待網路回應，CPU 幾乎不吃負載；同時維持數千條連線幾乎沒有成本，數千條執行緒則不然
 - 單一 event loop 代表共享的可變狀態不需要任何鎖，也沒有 context switch 與 IPC 序列化開銷
-- 全域上限只在一個地方施加——`aiohttp.TCPConnector(limit=...)`，對應 `--concurrency 50`
+- 全域上限只在一個地方施加：`aiohttp.TCPConnector(limit=...)`，對應 `--concurrency 50`
 
 <!--
 worker 數量與這個上限綁在同一個旋鈕上：main.py 啟動 --concurrency 個 worker
@@ -82,7 +82,7 @@ coroutine，因此不會出現 worker 數多於連線上限、在 connector 層�
 **連結追蹤的呼叫端本身就是那個數量有限的 worker pool 裡的一員，而佇列唯一的排空途徑是 worker 呼叫 `get()`；在已滿的有界佇列上做阻塞式入列，等於生產者在等一個就是自己的消費者。**
 
 <!--
-被放棄的網址不會寫入 _seen，因此佇列之後有空間時仍有機會被重新發現——放棄的語意是
+被放棄的網址不會寫入 _seen，因此佇列之後有空間時仍有機會被重新發現。放棄的語意是
 「這次不排程」，而不是「永久排除」。丟棄數量由 crawler_links_dropped_queue_full_total 計數。
 -->
 
@@ -91,7 +91,7 @@ coroutine，因此不會出現 worker 數多於連線上限、在 connector 層�
 ## 連結追蹤被防爬蟲陷阱上限框住
 
 - `--follow-links` 啟用；不帶這個參數時只處理種子清單，抓完即結束
-- 用標準庫 `html.parser` 掃出 `<a href>`，刻意不引入 BeautifulSoup 或 lxml——需要的只是把 href 抽出來，且對格式不良的 HTML 有容錯
+- 用標準庫 `html.parser` 掃出 `<a href>`，刻意不引入 BeautifulSoup 或 lxml，需要的只是把 href 抽出來，且對格式不良的 HTML 有容錯
 - `--max-pages-per-domain` 預設 20：達到上限後，再發現指向該網域的連結就直接略過
 - 上限用被發現連結**自己的網域**判斷，而不是來源頁面的網域
 
@@ -137,7 +137,7 @@ coroutine，因此不會出現 worker 數多於連線上限、在 connector 層�
  "robots_blocked": false, "ts": "2026-09-17T00:49:32Z"}
 ```
 
-被 `robots.txt` 擋下的網址同樣留下一筆紀錄（`status` 為 `null`、`elapsed_ms` 與 `attempts` 為 0）——那是整份輸出裡唯一能證明 robots.txt 確實被遵守的證據。
+被 `robots.txt` 擋下的網址同樣留下一筆紀錄（`status` 為 `null`、`elapsed_ms` 與 `attempts` 為 0）。整份輸出裡，只有這個欄位能證明 robots.txt 確實被遵守。
 
 <!--
 referrer 只在開啟連結追蹤時寫入，而且是整個 key 不存在，而非值為 null。
@@ -150,7 +150,7 @@ referrer 只在開啟連結追蹤時寫入，而且是整個 key 不存在，而
 
 - `--max-runtime-hours 48` 由背景 coroutine 去 `set()` 那個 SIGINT 與 SIGTERM 同樣會設定的 `stop_event`，因此只有一套 teardown
 - `--checkpoint-interval 300` 決定落地頻率；內容是 `seen`、`pending`、`domain_page_counts` 加上累計統計
-- 寫入先進同目錄暫存檔，再以 `os.replace()` 覆蓋——即使在 write 與 replace 之間被 `kill -9`，也不會留下半截檔案
+- 寫入先進同目錄暫存檔，再以 `os.replace()` 覆蓋；即使在 write 與 replace 之間被 `kill -9`，也不會留下半截檔案
 - `--resume` 直接重建 frontier 與統計計數器，跳過載入種子清單
 
 <!--
@@ -179,10 +179,10 @@ watch_metrics.py 每次取樣追加寫入 output/metrics_log.csv，後面的時�
 
 ## 測試完全不使用 mock
 
-- 全套 55 個測試、分布於 12 個檔案，整個 `tests/` 目錄沒有任何 `unittest.mock`、`monkeypatch` 或 `patch()`
+- 整個 `tests/` 目錄沒有任何 `unittest.mock`、`monkeypatch` 或 `patch()`
 - 會發網路請求的邏輯一律以 `aiohttp.test_utils.TestServer` 啟動真正監聽本機連接埠的伺服器驗證，真的走一次 TCP 與 HTTP
 - 續跑測試用 `subprocess.Popen` 啟動真正的 process 再 `.kill()`（等同 SIGKILL），然後斷言兩次抓取的網址完全不重疊、且聯集涵蓋全部網址
-- 一個回歸測試讓每個 worker 各自處理連結數超過佇列容量的頁面，斷言整場爬取仍然跑完——鎖住非阻塞入列語意
+- 一個回歸測試讓每個 worker 各自處理連結數超過佇列容量的頁面，斷言整場爬取仍然跑完，鎖住非阻塞入列語意
 
 ---
 
@@ -206,19 +206,26 @@ watch_metrics.py 每次取樣追加寫入 output/metrics_log.csv，後面的時�
 
 ## 請求大多成功，延遲全程持平
 
-| 狀態碼 | 佔比 |
-|---|---|
-| 200 | 94.81% |
-| 404 | 1.83% |
-| 403 | 1.57% |
-| 連線失敗（無狀態碼） | 1.10% |
-| 429 | 0.25% |
+![h:400](./rsc/latency-cdf-48h.png)
 
-| 延遲百分位（n = 1,199,676） | p50 | p90 | p99 | 最大 |
-|---|---|---|---|---|
-| 毫秒 | 868 | 2,495 | 6,019 | 14,381 |
+這是 48 小時的整體分布；p50 在時間軸上同樣全程持平，正是下一頁用來排除「網路變慢」這個解釋的依據。
 
-p50 全程持平，正是下一頁用來排除「網路變慢」這個解釋的依據。
+<!--
+CDF 是整段視窗的聚合分布，看的是「延遲長什麼樣子」：中位數 868 ms，83.9% 在 2 秒內，
+p99 = 6,019 ms，最大 14,381 ms。它本身不證明延遲隨時間穩定，那是下一頁的時間序列。
+-->
+
+---
+
+## 成功與失敗的組成
+
+![h:430](./rsc/outcomes-48h.png)
+
+<!--
+左圖「其他」＝其餘 2xx、全部 3xx 與其餘 4xx／5xx 合計 5,730 次；右圖「其餘長尾」
+併入連線重置 143 與伺服器斷線 93。失敗裡近八成是目標站台自己回的錯誤狀態碼，
+不是本地的連線問題，這是判斷「爬蟲壞了」還是「網站就這樣」的關鍵。
+-->
 
 ---
 
@@ -231,32 +238,51 @@ p50 全程持平，正是下一頁用來排除「網路變慢」這個解釋的�
 | 第 24 小時 | 19,968 |
 | 第 36 小時 | 8,066 |
 | 第 48 小時（視窗結束） | 7,354 |
-| 第 60 小時（**視窗之外**，process 持續至 60.2 小時） | 3,553 |
 
 - 高峰 18.8 次/秒 降到視窗結束的 2.0 次/秒，即 48 小時視窗內 **9.2 倍**
-- 延伸到 process 結束的 1.0 次/秒 則為 **19 倍**；這個比值只在視窗之外的第 59 至 60 小時成立
 - 因此前一頁的 7.32 次/秒 是健康階段與瀕死階段的混合平均
+
+---
+
+## 衰減是連續的，沒有任何一次卡死
+
+![h:400](./rsc/throughput-48h.png)
+
+<!--
+這張圖要讓聽眾看到的是「平滑單調」：沒有懸崖、沒有平台、沒有歸零，
+所以不是某次當掉或某個網域卡住，而是有東西在持續變慢。
+-->
 
 ---
 
 ## 衰減的是有效並發，不是網路
 
 - p50 延遲從頭到尾穩定在約 870 ms，網路端並未變慢
-- `crawler_inflight_requests` 小時均值由第 6 小時的約 26 降到視窗結束的約 3，到 process 結束為 1——上限是 `--concurrency 50`
+- `crawler_inflight_requests` 小時均值由第 6 小時的約 26 降到視窗結束的約 3；上限是 `--concurrency 50`
 - `crawler_queue_depth` 在開始約 14 分鐘後便觸及 `--queue-maxsize 50000`，視窗內 90.4% 的取樣維持在 49,999 以上，累計丟棄 65,355,760 條連結
 - Little's law 在各時點都成立，所以問題收斂成一句話：為什麼 worker 花在 `fetch()` 之外的時間愈來愈長（視窗結束時每次循環約 24 秒，其中僅約 0.87 秒在 `fetch()` 之內）
 
 | 假設 | 判定 |
 |---|---|
-| 佇列被少數網域佔據 | 排除——process 結束（60.2 小時）時，佇列中 49,998 個待爬網址分散在 28,242 個網域，佔比最高者僅 0.03% |
-| checkpoint 寫入阻塞 event loop | 部分成立，非主因——67 段停頓共 841 秒，約佔視窗 0.5% |
-| 記憶體中無上限累積的狀態造成 GC 停頓 | 主要假設，尚未證實——process 結束時 1,439,284 筆 `_seen`、同量級 referrer、181,888 個 `RobotFileParser`、三個從不淘汰的 dict |
+| checkpoint 寫入阻塞 event loop | 部分成立，非主因：67 段停頓共 841 秒，約佔視窗 0.5% |
+| 記憶體中無上限累積的狀態造成 GC 停頓 | 主要假設，尚未證實：視窗結束時 1,287,294 筆 `_seen`、同量級 referrer，`RobotFileParser` 與三個從不淘汰的 dict 隨網域數成長 |
 
-證實這個假設需要另行以記憶體剖析進行。防爬蟲陷阱上限本身確實有效：process 結束（60.2 小時）時記錄的 181,888 個網域中有 43,256 個（23.8%）達到 20 頁上限，且最大值恰為 20；48 小時視窗結束時 `crawler_distinct_domains_total` 為 174,973。
+證實這個假設需要另行以記憶體剖析進行。防爬蟲陷阱上限本身確實有效：上限在入列時強制執行，`domain_page_counts` 不存在超過 20 頁的網域；48 小時視窗結束時 `crawler_distinct_domains_total` 為 174,973。
 
 <!--
-表格中三個 60.2 小時的結束狀態值取自 results/endstate-60h.json，與 02-48h-run-results.md
-§2.3.3、§2.4 同源；視窗內的對照值 174,973 取自 output/metrics_log_clean.csv 的最後一列。
+視窗內的 1,287,294 取自 §2.2 的不重複網址數，174,973 取自 output/metrics_log_clean.csv
+的最後一列；兩者與 02-48h-run-results.md §2.3.4、§2.4 同源。
+-->
+
+---
+
+## 佇列永遠是滿的，在飛的請求卻愈來愈少
+
+![h:430](./rsc/concurrency-queue-48h.png)
+
+<!--
+上下兩張分開畫、不共用 y 軸：0–50 與 0–50,000 疊在同一張圖上會憑空造出一個
+不存在的相關性。重點是兩者的對比：可派工的網址從不匱乏，瓶頸在 worker 自己。
 -->
 
 ---
@@ -278,15 +304,11 @@ p50 全程持平，正是下一頁用來排除「網路變慢」這個解釋的�
 
 ## 已知限制
 
-- **記憶體中的狀態沒有上限，也沒有淘汰機制**——`_seen`、referrer 對應表、`RobotsCache` 中的 `RobotFileParser` 物件，以及 `ratelimiter.py` 裡三個以網域為 key 的 dict，全部只增不減；長時間運行下這是吞吐量衰減的主要待證假設
-- **`write_checkpoint()` 是同步的，會阻塞 event loop**——在 event loop 執行緒上把整個 `_seen` 序列化成 JSON，成本隨已看過的網址數成長，寫入期間所有 worker 都無法推進
-- **`bytes_received` 無法歸屬到個別紀錄**——未開啟 `--save-body` 時單筆紀錄不帶回應大小，該值只以 process 生命期的累計計數器存在，無法切分到任意時間視窗
-- **全域計數器狀態會跨測試殘留**——`metrics.py` 與 `stats.py` 的計數器是模組層級的單例，測試套件沒有 autouse fixture 重置它們
-- **沒有 CI**——測試只在本機以 `pytest` 執行，沒有任何自動化流程在提交時把關
+- **記憶體中的狀態沒有上限，也沒有淘汰機制**：`_seen`、referrer 對應表、`RobotsCache` 中的 `RobotFileParser` 物件，以及 `ratelimiter.py` 裡三個以網域為 key 的 dict，全部只增不減；長時間運行下這是吞吐量衰減的主要待證假設
+- **`write_checkpoint()` 是同步的，會阻塞 event loop**：在 event loop 執行緒上把整個 `_seen` 序列化成 JSON，成本隨已看過的網址數成長，寫入期間所有 worker 都無法推進
 
 ---
 
 ## 資料限制
 
-- **`bytes_received` 未列入視窗統計**——該值只以 process 生命週期內的累計計數器形式存在，無法歸屬到 48 小時視窗，因此 `results/summary-48h.json` 中該欄位為 `null` 而非 0
-- **「觸及網域」與「實際發出請求的網域」不是同一件事**——兩者相差 6,845 個，那是只被 `robots.txt` 擋下、從未真正發出請求的網域；兩個數字分開列出，以免把「觸及」誤讀為「抓取」
+- **「觸及網域」與「實際發出請求的網域」不是同一件事**：兩者相差 6,845 個，那是只被 `robots.txt` 擋下、從未真正發出請求的網域；兩個數字分開列出，以免把「觸及」誤讀為「抓取」
