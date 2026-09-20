@@ -405,7 +405,7 @@ def fig_worker_loop():
     # (label, cost caption, inside the inflight gauge, unguarded ValueError site)
     stages = [
         ("frontier.get()", "取出 URL", False, True),
-        ("robots.is_allowed()", "≤ 0.59 秒（上界）", False, False),
+        ("robots.is_allowed()", "≤ 0.63 秒（上界）", False, False),
         ("rate_limiter.acquire()", "≈ 0.87 秒（條件）", False, False),
         ("fetch()", "1.23 秒（平均）", True, False),
         ("store.record()", "寫入結果", True, False),
